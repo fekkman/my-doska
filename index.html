@@ -22,6 +22,7 @@
       cursor: pointer; padding: 6px 10px; border-radius: 8px; border: 1px solid #ddd;
       background: #f8f9fa; font-size: 13px; font-weight: 500;
     }
+    .btn:hover { background: #e9ecef; }
     .btn.active { background: #2563eb; color: white; border-color: #2563eb; }
     .color-dot {
       width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff;
@@ -32,58 +33,47 @@
     canvas { display: block; touch-action: none; cursor: crosshair; }
     #status {
       position: fixed; bottom: 10px; right: 14px; font-size: 12px;
-      color: #666; background: rgba(255,255,255,0.85); padding: 4px 8px; border-radius: 6px;
+      color: #666; background: rgba(255,255,255,0.9); padding: 4px 10px; border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.08);
     }
   </style>
 </head>
 <body class="grid-bg">
 
   <div id="toolbar">
-    <button class="btn" onclick="changePage(-1)">◀</button>
+    <button class="btn" id="prevPage">◀</button>
     <span id="pageLabel" style="font-size:13px; font-weight:bold; min-width:55px; text-align:center;">Лист 1</span>
-    <button class="btn" onclick="changePage(1)">▶</button>
+    <button class="btn" id="nextPage">▶</button>
 
     <div class="divider"></div>
 
-    <div class="color-dot selected" style="background:#111111;" onclick="pickColor('#111111', this)"></div>
-    <div class="color-dot" style="background:#2563eb;" onclick="pickColor('#2563eb', this)"></div>
-    <div class="color-dot" style="background:#dc2626;" onclick="pickColor('#dc2626', this)"></div>
-    <div class="color-dot" style="background:#16a34a;" onclick="pickColor('#16a34a', this)"></div>
+    <div class="color-dot selected" data-color="#111111" style="background:#111111;"></div>
+    <div class="color-dot" data-color="#2563eb" style="background:#2563eb;"></div>
+    <div class="color-dot" data-color="#dc2626" style="background:#dc2626;"></div>
+    <div class="color-dot" data-color="#16a34a" style="background:#16a34a;"></div>
 
     <div class="divider"></div>
 
-    <button class="btn active" id="btn-pen" onclick="setMode('pen')">🖊️ Ручка</button>
-    <button class="btn" id="btn-eraser" onclick="setMode('eraser')">🧽 Ластик</button>
-    <button class="btn" id="btn-text" onclick="setMode('text')">🔤 Текст</button>
+    <button class="btn active" id="btn-pen">🖊️ Ручка</button>
+    <button class="btn" id="btn-eraser">🧽 Ластик</button>
+    <button class="btn" id="btn-text">🔤 Текст</button>
     <input type="range" id="size" min="2" max="15" value="3" style="width:55px;" title="Толщина">
 
     <div class="divider"></div>
 
-    <button class="btn" onclick="document.getElementById('imgInput').click()" title="Загрузить скриншот из ВК Доски">📥 Фото / ВК</button>
-    <input type="file" id="imgInput" accept="image/*" style="display:none" onchange="uploadImage(event)">
-    <button class="btn" onclick="toggleGrid()">📏 Клетка</button>
-    <button class="btn" onclick="clearBoard()" style="color:#dc2626;" title="Очистить текущий лист">🗑️ Очистить</button>
+    <button class="btn" id="btn-img" title="Загрузить скриншот из ВК Доски">📥 Фото / ВК</button>
+    <input type="file" id="imgInput" accept="image/*" style="display:none">
+    <button class="btn" id="btn-grid">📏 Клетка</button>
+    <button class="btn" id="btn-clear" style="color:#dc2626;" title="Очистить текущий лист">🗑️ Очистить</button>
   </div>
 
-  <div id="status">Подключение...</div>
+  <div id="status">🟡 Подключение...</div>
   <canvas id="board"></canvas>
 
-  <script src="https://gstatic.com"></script>
-  <script src="https://gstatic.com"></script>
-
+  <script src="https://jsdelivr.net"></script>
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyAoxaXpHrHVW96pRisd9SI3nRGa-Izrkis",
-      authDomain: "://firebaseapp.com",
-      databaseURL: "https://firebasedatabase.app",
-      projectId: "my-doska",
-      storageBucket: "my-doska.firebasestorage.app",
-      messagingSenderId: "900883166470",
-      appId: "1:900883166470:web:5c63911816c3b6150dda87"
-    };
-
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.database();
+    const SUPABASE_URL = 'https://supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_JUw8Aecn4rGBh_pnV5XC_A_7b0PoF4r';
 
     const canvas = document.getElementById('board');
     const ctx = canvas.getContext('2d');
@@ -94,13 +84,9 @@
     canvas.height = window.innerHeight;
 
     let currentPage = 1;
-    let currentRef = null;
     let drawing = false, mode = 'pen', currentColor = '#111111', lastX = 0, lastY = 0;
 
-    db.ref('.info/connected').on('value', (snap) => {
-      statusEl.innerText = snap.val() ? '🟢 В сети (сохраняется автоматически)' : '🟡 Подключение...';
-    });
-
+    // Кнопки работают сразу, независимо от сети
     function setMode(newMode) {
       mode = newMode;
       document.querySelectorAll('#toolbar .btn').forEach(b => b.classList.remove('active'));
@@ -110,16 +96,23 @@
       canvas.style.cursor = newMode === 'text' ? 'text' : 'crosshair';
     }
 
-    function pickColor(color, el) {
-      currentColor = color;
-      setMode('pen');
-      document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('selected'));
-      el.classList.add('selected');
-    }
+    document.getElementById('btn-pen').onclick = () => setMode('pen');
+    document.getElementById('btn-eraser').onclick = () => setMode('eraser');
+    document.getElementById('btn-text').onclick = () => setMode('text');
+    document.getElementById('btn-grid').onclick = () => document.body.classList.toggle('grid-bg');
+    document.getElementById('btn-img').onclick = () => document.getElementById('imgInput').click();
 
-    function toggleGrid() { document.body.classList.toggle('grid-bg'); }
+    document.querySelectorAll('.color-dot').forEach(dot => {
+      dot.onclick = () => {
+        currentColor = dot.dataset.color;
+        setMode('pen');
+        document.querySelectorAll('.color-dot').forEach(d => d.classList.remove('selected'));
+        dot.classList.add('selected');
+      };
+    });
 
     function renderItem(d) {
+      if (!d) return;
       if (d.type === 'line') {
         ctx.save();
         if (d.isEraser) {
@@ -151,39 +144,64 @@
       }
     }
 
-    function loadPage(pageNum) {
-      if (currentRef) currentRef.off();
+    // Подключаем базу Supabase
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function loadPage(pageNum) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      currentRef = db.ref('pages/page_' + pageNum);
+      const { data, error } = await sb
+        .from('strokes')
+        .select('data')
+        .eq('page', pageNum)
+        .order('id', { ascending: true });
 
-      currentRef.on('child_added', (snapshot) => {
-        renderItem(snapshot.val());
-      });
-
-      currentRef.on('child_removed', () => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-      });
+      if (!error && data) {
+        statusEl.innerText = '🟢 В сети (сохраняется в облако)';
+        data.forEach(row => renderItem(row.data));
+      } else {
+        statusEl.innerText = '⚠️ Ошибка сети (проверьте интернет)';
+      }
     }
 
-    function changePage(delta) {
-      if (currentPage + delta < 1) return;
-      currentPage += delta;
+    // Слушаем новые штрихи от собеседника в реальном времени
+    sb.channel('board-live')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'strokes' }, (payload) => {
+        if (payload.new.page === currentPage) {
+          renderItem(payload.new.data);
+        }
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'strokes' }, () => {
+        loadPage(currentPage);
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') statusEl.innerText = '🟢 В сети (живой режим)';
+      });
+
+    async function sendItem(item) {
+      renderItem(item);
+      await sb.from('strokes').insert({ page: currentPage, data: item });
+    }
+
+    document.getElementById('prevPage').onclick = () => {
+      if (currentPage <= 1) return;
+      currentPage--;
       document.getElementById('pageLabel').innerText = 'Лист ' + currentPage;
       loadPage(currentPage);
-    }
+    };
 
-    function sendItem(item) {
-      renderItem(item);
-      currentRef.push(item);
-    }
+    document.getElementById('nextPage').onclick = () => {
+      currentPage++;
+      document.getElementById('pageLabel').innerText = 'Лист ' + currentPage;
+      loadPage(currentPage);
+    };
 
-    function uploadImage(e) {
+    document.getElementById('imgInput').onchange = (e) => {
       const file = e.target.files[0];
       if (!file) return;
       const reader = new FileReader();
       reader.onload = (ev) => sendItem({ type: 'img', src: ev.target.result, x: 40, y: 70 });
       reader.readAsDataURL(file);
-    }
+    };
 
     window.addEventListener('paste', (e) => {
       const item = Array.from(e.clipboardData.items).find(i => i.type.startsWith('image'));
@@ -215,12 +233,12 @@
     canvas.addEventListener('pointerup', () => drawing = false);
     canvas.addEventListener('pointerout', () => drawing = false);
 
-    function clearBoard() {
+    document.getElementById('btn-clear').onclick = async () => {
       if (confirm('Очистить текущий лист для всех?')) {
-        currentRef.remove();
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        await sb.from('strokes').delete().eq('page', currentPage);
       }
-    }
+    };
 
     loadPage(1);
   </script>
